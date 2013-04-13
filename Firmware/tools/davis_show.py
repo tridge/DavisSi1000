@@ -4,6 +4,7 @@ import serial, sys, optparse, time
 
 parser = optparse.OptionParser("davis_show")
 parser.add_option("--type", type='int', default=None, help='msg type to show')
+parser.add_option("--speed", action='store_true', default=False, help='show wind speed')
 
 opts, args = parser.parse_args()
 
@@ -14,8 +15,6 @@ def swap_bit_order(b):
     b = ((b & 0xCC) >> 2) | ((b & 0x33) << 2)
     b = ((b & 0xAA) >> 1) | ((b & 0x55) << 1)
     return b
-
-
 
 def crc16_ccitt(buf):
     crc = 0
@@ -30,23 +29,20 @@ def crc16_ccitt(buf):
     return crc
 
 def wind_speed(b):
-    return b ^ 0xE
+    '''return wind speed in m/s'''
+    return b / 2.6
 
 def wind_direction(b):
-    n1 = [0xD, 0xE, 0xF, 0x0, 0x9, 0xA, 0xB, 0xC, 0x5, 0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4]
-    n2 = [0xD, 0xC, 0xF, 0xE, 0x9, 0x8, 0xB, 0xA, 0x5, 0x4, 0x7, 0x6, 0x1, 0x0, 0x3, 0x2]
-    v = (n1[b>>4]<<4) | n2[b&0xF]
-    return v * 360 / 255
+    '''return wind direction in degrees. Zero degrees is the arrow poiting at the front of the unit, away
+    from the solar panel'''
+    return b * 360 / 255
 
 def decode(b1, b2):
-    '''decode a 12 bit value from bytes 2 and 3'''
-    n1 = [ 0xF, 0xE, 0xD, 0xC, 0xB, 0xA, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4, 0x3, 0x2, 0x1, 0x0 ]
-    n2 = [ 0x6, 0x7, 0x4, 0x5, 0x2, 0x3, 0x0, 0x1, 0xE, 0xF, 0xC, 0xD, 0xA, 0xB, 0x8, 0x9 ]
-    n3 = [ 0xC, 0xD, 0xE, 0xF, 0x8, 0x9, 0xA, 0xB, 0x4, 0x5, 0x6, 0x7, 0x0, 0x1, 0x2, 0x3 ]
-    v = (n1[b1>>4]<<8) | (n2[b1&0xF]<<4) | n3[b2>>4]
-    return v
+    '''decode the 4th and 5th bytes of the packet, using 12 bits to give a value for some field'''
+    return (b1<<4) | (b2>>4)
 
 def temperature(b1, b2):
+    '''return temperature in celsius'''
     v = decode(b1, b2)
     farenheit = v / 7.0 - 30.0
     celcius = (farenheit - 32) * 5 / 9
@@ -59,29 +55,35 @@ def process_line(line):
         try:
             bytes.append(int(a[i],16))
         except Exception:
-            print "INVALID %s" % line
+            print "INVALID"
             bytes.append(0xFF)
     t = float(a[10])
+    if opts.speed:
+        print("%u %.2f" % (t, wind_speed(bytes[1])))
+        return
+    v = decode(bytes[3], bytes[4])
+    crc = crc16_ccitt(bytes[0:8])
+    if crc != 0:
+        print "BADCRC"
+        return
     if opts.type is None:
-        print "%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %04x %.2f speed=%u wdirection=%u" % (
+        print "%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %04x %u %.2f speed=%.1f wdirection=%u" % (
             bytes[0], bytes[1],
             bytes[2], bytes[3],
             bytes[4], bytes[5],
             bytes[6], bytes[7],
             bytes[8], bytes[9],
             crc16_ccitt(bytes[0:8]),
+            v,
             t,
             wind_speed(bytes[1]),
             wind_direction(bytes[2]))
         return
     type = bytes[0] >> 4
     if type == opts.type or opts.type == -1:
-        v = -1
-        if type == 7:
+        if type == 8:
             v = temperature(bytes[3], bytes[4])
-        else:
-            v = decode(bytes[3], bytes[4])
-        print("%02X %X %X %X %X %X %X %.2f %s" % (
+        print("%02X %X %X %X %X %X %X %04x %.2f %s" % (
             bytes[0],
             bytes[3]>>4,
             bytes[3]&0xF,
@@ -89,6 +91,7 @@ def process_line(line):
             bytes[4]&0xF,
             bytes[5]>>4,
             bytes[5]&0xF,
+            crc16_ccitt(bytes[0:8]),
             v,
             time.ctime(t)))
 
