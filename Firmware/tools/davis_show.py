@@ -37,14 +37,22 @@ def wind_direction(b):
     from the solar panel'''
     return b * 360 / 255
 
-def decode(b1, b2):
+def decode_12(b1, b2):
     '''decode the 4th and 5th bytes of the packet, using 12 bits to give a value for some field'''
     return (b1<<4) | (b2>>4)
 
+def humidity(b1, b2):
+    '''see https://github.com/dekay/im-me/blob/master/pocketwx/src/protocol.txt'''
+    return b1 | ((b2>>4)<<8)
+
+def rain(b1, b2):
+    '''see https://github.com/dekay/im-me/blob/master/pocketwx/src/protocol.txt'''
+    return b1 & 0x7F
+
 def temperature(b1, b2):
     '''return temperature in celsius'''
-    v = decode(b1, b2)
-    farenheit = v / 7.0 - 30.0
+    v = (b1 << 8) | b2;
+    farenheit = v / 160.0
     celcius = (farenheit - 32) * 5 / 9
     return celcius
 
@@ -61,7 +69,7 @@ def process_line(line):
     if opts.speed:
         print("%u %.2f" % (t, wind_speed(bytes[1])))
         return
-    v = decode(bytes[3], bytes[4])
+    v = decode_12(bytes[3], bytes[4])
     crc = crc16_ccitt(bytes[0:8])
     if crc != 0:
         print "BADCRC"
@@ -83,6 +91,10 @@ def process_line(line):
     if type == opts.type or opts.type == -1:
         if type == 8:
             v = temperature(bytes[3], bytes[4])
+        if type == 0xA:
+            v = humidity(bytes[3], bytes[4])
+        if type == 0xE:
+            v = rain(bytes[3], bytes[4])
         print("%02X %X %X %X %X %X %X %04x %.2f %s" % (
             bytes[0],
             bytes[3]>>4,
