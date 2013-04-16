@@ -102,6 +102,8 @@ static uint16_t crc16_ccitt(uint8_t len)
 #define VALID_LIGHT          (1<<8)
 #define VALID_RAIN_SPOONS    (1<<9)
 #define VALID_HUMIDITY       (1<<10)
+#define VALID_UVI            (1<<11)
+#define VALID_SOLAR          (1<<12)
 
 #define ISS_DATA_VERSION "1.0"
 
@@ -123,6 +125,8 @@ __xdata static struct {
 	uint16_t light;
 	uint8_t rain_spoons;
 	float humidity_pct;
+	float uv_index;
+	float solar_wm2;
 } iss_data;
 
 static __pdata uint8_t one_second_counter;
@@ -221,6 +225,16 @@ static void show_iss_data(void)
 	if (iss_data.valid_mask & VALID_LIGHT) {
 		printf("\"light\": %u, ", (unsigned)iss_data.light);
 	}
+	if (iss_data.valid_mask & VALID_UVI) {
+		printf("\"UV_index\": ");
+		print_float2(iss_data.uv_index);
+		printf(", ");
+	}
+	if (iss_data.valid_mask & VALID_SOLAR) {
+		printf("\"solar_Wm2\": ");
+		print_float2(iss_data.solar_wm2);
+		printf(", ");
+	}
 	if (iss_data.valid_mask & VALID_RAIN_SPOONS) {
 		printf("\"rain_spoons\": %u, ", (unsigned)iss_data.rain_spoons);
 	}
@@ -298,6 +312,22 @@ static void parse_iss_data(void)
 		v = pbuf[3] & 0x7F;
 		iss_data.rain_spoons = v;
 		iss_data.valid_mask |= VALID_RAIN_SPOONS;
+		break;
+	}
+
+	case 0x40: {
+		// UV index. See http://www.wxforum.net/index.php?topic=18489.msg178506#msg178506
+		v = (pbuf[3]<<4) | (pbuf[4]>>4);
+		iss_data.uv_index = (v-4) / 200.0;
+		iss_data.valid_mask |= VALID_UVI;
+		break;
+	}
+
+	case 0x60: {
+		// solar. See http://www.wxforum.net/index.php?topic=18489.msg178506#msg178506
+		v = (pbuf[3]<<4) | (pbuf[4]>>4);
+		iss_data.solar_wm2 = (v-4) / 2.27;
+		iss_data.valid_mask |= VALID_SOLAR;
 		break;
 	}
 		
