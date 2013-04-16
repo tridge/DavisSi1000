@@ -227,7 +227,9 @@ static void show_iss_data(void)
 	printf("\"raw\": \"");
 	for (i=0; i<10; i++) {
 		print_hex(iss_data.raw[i]);
-		printf(" ");
+		if (i != 9) {
+			printf(" ");
+		}
 	}
 	printf("\", ");
 	printf("\"version\": \"%s\" }\n", ISS_DATA_VERSION);
