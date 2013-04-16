@@ -138,11 +138,12 @@ static void one_second(void)
 	one_second_counter++;
 	seconds_since_boot++;
 	if (seconds_last_packet == 0 || (seconds_since_boot - seconds_last_packet) > 10) {
-		// we are doing initial lock, decrement channel
-		// more rapidly
-		fhop_prev();
-		radio_set_frequency(fhop_receive_freqency());
-		radio_receiver_on();
+		if (one_second_counter > 51) {
+			fhop_prev();
+			radio_set_frequency(fhop_receive_freqency());
+			radio_receiver_on();
+			one_second_counter = 0;
+		}
 		printf("Searching %lu at %lu Hz\n", 
 		       (unsigned long)seconds_since_boot,
 		       (unsigned long)fhop_receive_freqency());
@@ -355,8 +356,8 @@ serial_loop(void)
 		__pdata uint8_t	len;
 
 		if (delay_expired()) {
-			one_second();
 			delay_set_ticks(100);
+			one_second();
 		}
 
 		if (_canary != 42) {

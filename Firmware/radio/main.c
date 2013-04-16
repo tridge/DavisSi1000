@@ -233,9 +233,9 @@ radio_init(void)
 	}
 
 	// And intilise the radio with them.
-	if (!radio_configure(param_get(PARAM_AIR_SPEED)) &&
-	    !radio_configure(param_get(PARAM_AIR_SPEED)) &&
-	    !radio_configure(param_get(PARAM_AIR_SPEED))) {
+	if (!radio_configure() &&
+	    !radio_configure() &&
+	    !radio_configure()) {
 		panic("radio_configure failed");
 	}
 }

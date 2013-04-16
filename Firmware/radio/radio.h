@@ -179,12 +179,9 @@ extern uint8_t radio_get_channel(void);
 
 /// configure the radio for a given air data rate
 ///
-/// @param air_rate		The air data rate, in bits per second
-///				Note that this value is rounded up to
-///				the next supported value
 /// @return			True if the radio was successfully configured.
 ///
-extern bool radio_configure(__pdata uint8_t air_rate);
+extern bool radio_configure(void);
 
 /// configure the radio network ID
 ///
@@ -207,13 +204,6 @@ extern uint8_t radio_last_rssi(void);
 /// @return			The RSSI register as reported by the radio
 ///
 extern uint8_t radio_current_rssi(void);
-
-/// return the air data rate
-///
-/// @return			The value passed to the last successful call
-///				to radio_configure
-///
-extern uint8_t radio_air_rate(void);
 
 /// set the radio transmit power (in dBm)
 ///
@@ -242,10 +232,8 @@ void MAVLink_report(void);
 struct radio_settings {
 	uint32_t frequency;
 	uint32_t channel_spacing;
-	uint8_t air_data_rate;
 	uint8_t current_channel;
 	uint8_t transmit_power;
-	uint8_t preamble_length; // in nibbles
 };
 
 extern __pdata struct radio_settings settings;
