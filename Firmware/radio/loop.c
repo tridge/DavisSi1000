@@ -68,18 +68,240 @@ swap_packet_bit_order(__pdata uint8_t len)
 	}
 }
 
-static __pdata one_second_counter;
+/*
+  find CRC16 of pbuf
+ */
+static uint16_t crc16_ccitt(uint8_t len)
+{
+	register uint8_t i, j;
+	register uint16_t crc = 0;
+	for (i=0; i<len; i++) {
+		register uint8_t b = pbuf[i];
+		crc ^= b << 8;
+		for (j=0; j<8; j++) {
+			if (crc & 0x8000) {
+				crc = (crc << 1) ^ 0x1021;
+			} else {
+				crc = crc << 1;
+			}
+		}
+	}
+	return crc;
+}
+
+// bit definitions for valid_mask, telling us what
+// types of data have been received
+#define VALID_RECV_PACKETS   (1<<0)
+#define VALID_LOST_PACKETS   (1<<1)
+#define VALID_BAD_CRC        (1<<2)
+#define VALID_RSSI           (1<<3)
+#define VALID_TRANSMITTER    (1<<4)
+#define VALID_WIND_SPEED     (1<<5)
+#define VALID_WIND_DIRECTION (1<<6)
+#define VALID_TEMPERATURE    (1<<7)
+#define VALID_LIGHT          (1<<8)
+#define VALID_RAIN_SPOONS    (1<<9)
+#define VALID_HUMIDITY       (1<<10)
+
+#define ISS_DATA_VERSION "1.0"
+
+/*
+  state of the data received from ISS
+ */
+__xdata static struct {
+	uint16_t valid_mask;
+	uint8_t raw[10];	
+	uint8_t transmitter_id;
+	uint8_t rssi;
+	uint32_t lost_packets;
+	uint32_t recv_packets;
+	uint32_t bad_crc;
+
+	uint8_t wind_speed_mph;
+	uint16_t wind_direction_degrees;
+	float temperature_F;
+	uint16_t light;
+	uint8_t rain_spoons;
+	float humidity_pct;
+} iss_data;
+
+static __pdata uint8_t one_second_counter;
+static __pdata uint32_t seconds_since_boot;
+static __pdata uint32_t seconds_last_packet;
 
 static void one_second(void)
 {
 	one_second_counter++;
-	if (one_second_counter == 4) {
+	seconds_since_boot++;
+	if (seconds_last_packet == 0 || (seconds_since_boot - seconds_last_packet) > 10) {
+		// we are doing initial lock, decrement channel
+		// more rapidly
+		fhop_prev();
+		radio_set_frequency(fhop_receive_freqency());
+		radio_receiver_on();
+		printf("Searching %lu at %lu Hz\n", 
+		       (unsigned long)seconds_since_boot,
+		       (unsigned long)fhop_receive_freqency());
+		return;
+	}
+	if (one_second_counter >= 3) {
 		fhop_next();
 		radio_set_frequency(fhop_receive_freqency());
 		radio_receiver_on();
 		one_second_counter = 0;
-		printf("Searching...\n");
+		if (seconds_last_packet != 0) {
+			iss_data.lost_packets++;
+			iss_data.valid_mask |= VALID_LOST_PACKETS;
+		}
 	}
+}
+
+// print a float to 1 digits
+static void print_float1(float v)
+{
+	register int v1 = v;
+	register int v2 = (v - v1)*10;
+	printf("%d.%u", v1, v2);
+}
+
+// print a float to 2 digits
+static void print_float2(float v)
+{
+	register int v1 = v;
+	register int v2 = (v - v1)*100;
+	printf("%d.%u", v1, v2);
+}
+
+// print a 2 digit hex value
+static void print_hex(register uint8_t v)
+{
+	// this avoids a problem with %02x in printf library
+	if (v < 16) {
+		printf("0");
+	}
+	printf("%x", (unsigned)v);
+}
+
+// display ISS data as JSON
+static void show_iss_data(void)
+{
+	__pdata uint8_t i;
+	printf("{ ");
+	if (iss_data.valid_mask & VALID_TRANSMITTER) {
+		printf("\"transmitter_id\": %u, ", (unsigned)iss_data.transmitter_id);
+	}
+	if (iss_data.valid_mask & VALID_RSSI) {
+		printf("\"RSSI\": %u, ", (unsigned)iss_data.rssi);
+	}
+	if (iss_data.valid_mask & VALID_RECV_PACKETS) {
+		printf("\"recv_packets\": %lu, ", (unsigned long)iss_data.recv_packets);
+	}
+	if (iss_data.valid_mask & VALID_LOST_PACKETS) {
+		printf("\"lost_packets\": %lu, ", (unsigned long)iss_data.lost_packets);
+	}
+	if (iss_data.valid_mask & VALID_BAD_CRC) {
+		printf("\"bad_CRC\": %lu, ", (unsigned long)iss_data.bad_crc);
+	}
+	if (iss_data.valid_mask & VALID_WIND_SPEED) {
+		printf("\"wind_speed_mph\": %u, ", (unsigned)iss_data.wind_speed_mph);
+	}
+	if (iss_data.valid_mask & VALID_WIND_DIRECTION) {
+		printf("\"wind_direction_degrees\": %u, ", (unsigned)iss_data.wind_direction_degrees);
+	}
+	if (iss_data.valid_mask & VALID_TEMPERATURE) {
+		printf("\"temperature_F\": ");
+		print_float2(iss_data.temperature_F);
+		printf(", ");
+	}
+	if (iss_data.valid_mask & VALID_HUMIDITY) {
+		printf("\"humidity_pct\": ");
+		print_float1(iss_data.humidity_pct);
+		printf(", ");
+	}
+	if (iss_data.valid_mask & VALID_LIGHT) {
+		printf("\"light\": %u, ", (unsigned)iss_data.light);
+	}
+	if (iss_data.valid_mask & VALID_RAIN_SPOONS) {
+		printf("\"rain_spoons\": %u, ", (unsigned)iss_data.rain_spoons);
+	}
+	printf("\"raw\": \"");
+	for (i=0; i<10; i++) {
+		print_hex(iss_data.raw[i]);
+		printf(" ");
+	}
+	printf("\", ");
+	printf("\"version\": \"%s\" }\n", ISS_DATA_VERSION);
+}
+
+// parse ISS data - see https://github.com/dekay/im-me/blob/master/pocketwx/src/protocol.txt
+static void parse_iss_data(void)
+{
+	__pdata uint16_t v;
+	__pdata int16_t s;
+
+	if (crc16_ccitt(8) != 0) {
+		iss_data.bad_crc++;
+		iss_data.valid_mask |= VALID_BAD_CRC;
+		return;
+	}
+	seconds_last_packet = seconds_since_boot;
+
+	iss_data.recv_packets++;
+	iss_data.valid_mask |= VALID_RECV_PACKETS;
+
+	iss_data.rssi = radio_last_rssi();
+	iss_data.valid_mask |= VALID_RSSI;
+
+	memcpy(iss_data.raw, pbuf, 10);
+
+	iss_data.transmitter_id = pbuf[0]&0x7;
+	iss_data.valid_mask |= VALID_TRANSMITTER;
+
+	iss_data.wind_speed_mph = pbuf[1];
+	iss_data.valid_mask |= VALID_WIND_SPEED;
+
+	if (pbuf[2] != 0) {
+		iss_data.wind_direction_degrees = 0.5 + (pbuf[2] * 360.0 / 255);
+		iss_data.valid_mask |= VALID_WIND_DIRECTION;
+	}
+
+	// parse packet types
+	switch (pbuf[0] & 0xF0) {
+	case 0x80: {
+		// temperature
+		s = (pbuf[3]<<8) | pbuf[4];
+		iss_data.temperature_F = 0.5 + (s / 160.0);
+		iss_data.valid_mask |= VALID_TEMPERATURE;
+		break;
+	}
+
+	case 0x70: {
+		// light
+		v = (pbuf[3]<<4) | (pbuf[4]>>4);
+		iss_data.light = v;
+		iss_data.valid_mask |= VALID_LIGHT;
+		break;
+	}
+
+	case 0xA0: {
+		// humidity, 
+		v = pbuf[3] | ((pbuf[4]>>4)<<8);
+		iss_data.humidity_pct = v * 0.1;
+		iss_data.valid_mask |= VALID_HUMIDITY;
+		break;
+	}
+
+	case 0xE0: {
+		// rain spoons, 7 bits only
+		v = pbuf[3] & 0x7F;
+		iss_data.rain_spoons = v;
+		iss_data.valid_mask |= VALID_RAIN_SPOONS;
+		break;
+	}
+		
+	}
+
+	show_iss_data();
 }
 
 /// main loop for time division multiplexing transparent serial
@@ -118,20 +340,18 @@ serial_loop(void)
 
 		// see if we have received a packet
 		if (radio_receive_packet(&len, pbuf)) {
-			__pdata uint8_t i;
-			swap_packet_bit_order(len);
-			for (i=0; i<len; i++) {
-				printf("%x ", (unsigned)pbuf[i]);
+			// only look at 10 byte packets
+			if (len == 10) {
+				swap_packet_bit_order(len);
+				fhop_next();
+				parse_iss_data();
+				delay_set_ticks(100);
+				one_second_counter = 0;
 			}
-			printf("\n");
-			fhop_next();
 
 			// re-enable the receiver
 			radio_set_frequency(fhop_receive_freqency());
 			radio_receiver_on();
-
-			delay_set_ticks(100);
-			one_second_counter = 0;
 		}
 	}
 }

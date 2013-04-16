@@ -35,6 +35,7 @@
 #define _FREQ_HOPPING_H_
 
 extern void fhop_next(void);
+extern void fhop_prev(void);
 
 /// tell the loop code what channel to receive on
 ///

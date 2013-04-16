@@ -59,11 +59,24 @@ fhop_receive_freqency(void)
 	return frequencies[receive_channel];
 }
 
-// called when the transmit windows changes owner
+// called to move to next frequency
 void 
 fhop_next(void)
 {
-	receive_channel = (receive_channel + 1) % 51;
+	receive_channel++;
+	if (receive_channel == 51) {
+		receive_channel = 0;
+	}
 }
 
 
+// called to move to previous frequency
+void 
+fhop_prev(void)
+{
+	if (receive_channel == 0 || receive_channel > 50) {
+		receive_channel = 50;
+	} else {
+		receive_channel--;
+	}
+}
