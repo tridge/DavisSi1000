@@ -4,7 +4,27 @@
 #    See the file LICENSE.txt for your full rights.
 #
 #
-"""Driver for Si1000 for the weewx weather system"""
+"""Driver for Si1000 radio receiver for a Davis weather station
+
+See https://github.com/tridge/DavisSi1000 for details of the radio
+receiver used
+
+Driver based on simulator.py written by Tom Keffer
+
+To use this driver, add the following to weewx.conf:
+
+[Station]
+    station_type = Si1000
+
+[Si1000]
+    driver = weewx.drivers.Si1000
+    port = /dev/ttyAMA0
+    baudrate = 57600
+
+    # adjust wind direction based on install orientation
+    wind_dir_adjust = 180
+
+"""
 
 from __future__ import with_statement
 import math
@@ -16,21 +36,21 @@ import weeutil.weeutil
 import weewx.abstractstation
 import weewx.wxformulas
 
-def loader(config_dict):
-    start_ts = resume_ts = None
-    station = Si1000(start_time=start_ts, resume_time=resume_ts, **config_dict['Si1000'])
-
+def loader(config_dict, engine):
+    station = Si1000(**config_dict['Si1000'])
     return station
         
 class Si1000(weewx.abstractstation.AbstractStation):
-    """Station simulator"""
+    """Si1000 driver"""
     
     def __init__(self, **stn_dict):
         """Initialize the driver
         """
         import serial
+        
         self.port = stn_dict.get('port', '/dev/ttyAMA0')
         self.baudrate = int(stn_dict.get('baudrate', 57600))
+        self.wind_dir_adjust = int(stn_dict.get('wind_dir_adjust', 180))
         
         self.fd = serial.Serial(self.port, self.baudrate, timeout=3)
 
@@ -41,7 +61,7 @@ class Si1000(weewx.abstractstation.AbstractStation):
         parameter is an optional conversion function
         '''
         self.fieldmap = {
-            'wind_direction_degrees' : ('windDir',   None),
+            'wind_direction_degrees' : ('windDir',   self.adjust_wind_direction),
             'wind_speed_mph'         : ('windSpeed', None),
             'temperature_F'          : ('outTemp',   None),
             'humidity_pct'           : ('humidity',  None),
@@ -60,6 +80,13 @@ class Si1000(weewx.abstractstation.AbstractStation):
         self.last_rain = rain_spoons
         # each spoon is 0.1"
         return ret * 0.1
+
+    def adjust_wind_direction(self, direction):
+        '''adjust wind direction for installation'''
+        direction += self.wind_dir_adjust
+        if direction > 360:
+            direction -= 360
+        return direction
 
     def genLoopPackets(self):
         
@@ -89,7 +116,7 @@ class Si1000(weewx.abstractstation.AbstractStation):
 
     @property
     def hardware_name(self):
-        return "Si1000"
+        return "DavisSi1000"
         
 if __name__ == "__main__":
 
