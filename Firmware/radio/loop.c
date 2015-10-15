@@ -144,7 +144,7 @@ static void one_second(void)
 			radio_receiver_on();
 			one_second_counter = 0;
 		}
-		printf("Searching %lu at %lu Hz\n", 
+		printf("{\"ready\": false, \"status\": \"Searching %lu at %lu Hz\"}\n", 
 		       (unsigned long)seconds_since_boot,
 		       (unsigned long)fhop_receive_freqency());
 		return;
@@ -191,7 +191,7 @@ static void print_hex(register uint8_t v)
 static void show_iss_data(void)
 {
 	__pdata uint8_t i;
-	printf("{ ");
+	printf("{ \"ready\": true, \"status\": \"Receiving ISS data\", ");
 	if (iss_data.valid_mask & VALID_TRANSMITTER) {
 		printf("\"transmitter_id\": %u, ", (unsigned)iss_data.transmitter_id);
 	}
