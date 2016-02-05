@@ -78,8 +78,8 @@ class Si1000(weewx.abstractstation.AbstractStation):
             # rain_spoons is 7 bit
             ret = 128 + ret
         self.last_rain = rain_spoons
-        # each spoon is 0.1"
-        return ret * 0.1
+        # each spoon is 0.01"
+        return ret * 0.01
 
     def adjust_wind_direction(self, direction):
         '''adjust wind direction for installation'''
